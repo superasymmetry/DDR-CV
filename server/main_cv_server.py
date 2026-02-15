@@ -37,6 +37,21 @@ def get_depth_at_point(depth_map, point):
         return int(depth_map[y, x])
     return 0
 
+def draw_depth_at_point(frame, depth_map, point, label):
+    """Draw depth value at a point on the frame"""
+    x, y = int(point[0]), int(point[1])
+    if 0 <= x < depth_map.shape[1] and 0 <= y < depth_map.shape[0]:
+        d = depth_map[y, x]
+        cv2.putText(
+            frame,
+            f"{label}: {d}",
+            (x + 5, y - 5),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (255, 255, 255),
+            2
+        )
+
 model = YOLO('yolov8n-pose.pt')
 cap = cv2.VideoCapture(0)
 
@@ -56,7 +71,7 @@ while cap.isOpened():
     results = model(frame, verbose=False)
     
     for result in results:
-        if result.keypoints is not None:
+        if result.keypoints is not None and len(result.keypoints.xy) > 0:
             keypoints = result.keypoints.xy[0]
             
             left_ankle = keypoints[15]
@@ -91,19 +106,29 @@ while cap.isOpened():
                     "timestamp": current_time
                 }
                 
+                # Log the data
+                print(f"📊 LA:{pose_data['left_ankle']['depth']} RA:{pose_data['right_ankle']['depth']} "
+                      f"LK:{pose_data['left_knee']['depth']} RK:{pose_data['right_knee']['depth']}")
+                
                 try:
                     requests.post(SERVER_URL, json=pose_data, timeout=0.1)
                     last_send_time = current_time
-                except:
-                    pass  # Continue even if send fails
+                except Exception as e:
+                    print(f"⚠️  Server error: {e}")
             
-            # Draw visualization
+            # Draw visualization with depth values
+            draw_depth_at_point(frame, depth_map, left_ankle, "LA")
+            draw_depth_at_point(frame, depth_map, right_ankle, "RA")
+            draw_depth_at_point(frame, depth_map, left_knee, "LK")
+            draw_depth_at_point(frame, depth_map, right_knee, "RK")
+            
             cv2.circle(frame, tuple(left_ankle.int().tolist()), 8, (0, 0, 255), -1)
             cv2.circle(frame, tuple(right_ankle.int().tolist()), 8, (0, 0, 255), -1)
             cv2.circle(frame, tuple(left_knee.int().tolist()), 8, (0, 255, 0), -1)
             cv2.circle(frame, tuple(right_knee.int().tolist()), 8, (0, 255, 0), -1)
 
     cv2.imshow('CV Server', frame)
+    cv2.imshow('Depth', depth_map)
     
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
